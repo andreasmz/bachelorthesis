@@ -1,4 +1,4 @@
-prediction_name,structure_file,hbonds,salt_bridges,buried_area,min_distance,hydrophobic_interactions
+structure_name,file,hbonds,salt_bridges,buried_area,min_distance,hydrophobic_interactions
 DEG_APCC_KENBOX_2_4GGD,ranked_0,9,0,688.863,6.0634038192457655,0
 DEG_APCC_KENBOX_2_4GGD,ranked_1,9,0,648.414,6.083082359397326,0
 DEG_APCC_KENBOX_2_4GGD,ranked_2,10,0,724.694,6.072073073599561,3
