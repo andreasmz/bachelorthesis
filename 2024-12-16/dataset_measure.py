@@ -154,31 +154,45 @@ def find_hydrophobic_interactions(structure, cutoff=5.0):
 
 parser = PDBParser(QUIET=True)
 
-def EvaluateStructure(path: pathlib.Path, structure_name: str, file_name: str) -> dict|None:
+def OpenStructure(path: pathlib.Path, structure_name: str = "") -> tuple:
+    """
+        Opens the given structure and returns the Bio.PDB and biotite objects.
+    """
+    file_name = path.name
     try:
         structure = parser.get_structure("structure", file=path)
         structure_biotite = pdb.get_structure(pdb.PDBFile.read(path))
     except PDBConstructionException:
         print(f"Can't parse structure {structure_name} (file {file_name})")
-        return None
+        return (None, None)
     except ValueError as ex:
         print(f"Can't parse structure {structure_name} (file {file_name}) due to the following reason: {ex}")
-        return None
+        return (None, None)
     
     chains = [c for c in structure.get_chains()]
     if len(chains) != 2:
         print(f"Can't parse structure {structure_name} (file {file_name}) because it has not 2 chains")
-        return None
+        return (None, None)
+    
+    return (structure, structure_biotite)
+
+def EvaluateStructure(path: pathlib.Path, structure_name: str = "") -> dict|None:
+    """
+        Measures the pdb file given by path
+    """
+    file_name = path.name
+    structure, structure_biotite = OpenStructure(path, structure_name)
+    if structure is None or structure_biotite is None: return None
 
     buried_area = calculate_buried_area(structure)
-    hbonds = find_h_bonds(structure[0], structure_biotite)
+    hbonds = find_h_bonds(structure, structure_biotite)
     min_distance = minimum_interface_distance(structure)
     salt_bridges = find_salt_bridges(structure)
     hydrophobic_interactions = find_hydrophobic_interactions(structure)
 
     return {
-        'prediction_name': structure_name,
-        'structure_file': file_name,
+        'structure_name': structure_name,
+        'file': file_name,
         'hbonds': hbonds,
         'salt_bridges': salt_bridges,
         'buried_area': buried_area,
@@ -186,104 +200,25 @@ def EvaluateStructure(path: pathlib.Path, structure_name: str, file_name: str) -
         'hydrophobic_interactions': hydrophobic_interactions
     }
 
+def _run_task(tasks):
+        silent, task = tasks[0], tasks[1:]
+        r = EvaluateStructure(*task)
+        if r is not None and not silent:
+            print(r["structure_name"], r["file"])
+        return r
 
-def WalkFolder(basePath: str, 
-               pathObj:dict[str, dict[str, dict[str, str]]]={},
-               structures: None|str|list[str] = None,
-               files: None|str|list[str] = None
-               ) -> dict[str, dict[str, dict[str, str]]]:
+def Run(pathObj: list[pathlib.Path, str], silent=True, num_threads=cpu_count) -> pd.DataFrame|None:
     """
-        Add the path basePath/structure/file.pdb to the pathObj provided (or create a new one if omitted).
-        If files and/or structures are None, search inside the directory for all pdb files.
-
-        The pathObj has the following structure:
-        { 
-            Structure : {
-                File: path to file
-            }
-        }
-
-        Returns:
-            pathObj
+        Measures the given paths and returns the result as pandas Dataframe
     """
 
-    structures_count = 0
-    basePath: pathlib.Path = pathlib.Path(basePath)
-    if not basePath.is_dir():
-        raise ValueError("The given basePath is not a valid directory")
-    
-    if structures is None:
-        structures: list[pathlib.Path] = [p for p in basePath.iterdir() if p.is_dir()]
-    elif isinstance(structures, str):
-        structures: list[pathlib.Path] = [basePath / structures]
-    elif isinstance(structures, list):
-        structures: list[pathlib.Path] = [basePath / p for p in structures]
-    else:
-        raise ValueError("Invalid argument for structures")
-    
-    for structure in structures:
-        if not structure.exists() or not structure.is_dir():
-            raise ValueError(f"The structure {structure} does not point to a valid folder")
-        structure_name = str(structure.stem)
-        pathObj[structure_name] = pathObj.get(structure_name, {})
-
-        if files is None:
-            filesF: list[pathlib.Path] = [f for f in structure.iterdir() if f.is_file()]
-        elif isinstance(files, str):
-            filesF: list[pathlib.Path] = [structure / f"{files}.pdb"]
-        elif isinstance(files, list):
-            filesF: list[pathlib.Path] = [structure / f"{f}.pdb" for f in files]
-        else:
-            raise ValueError("Invalid argument for files")
-        
-        for file in filesF:
-            if not file.exists() or not file.is_file():
-                raise ValueError(f"{structure}/{file} does not point to a valid file")
-            if not file.suffix.lower() == ".pdb":
-                continue
-            file_name = file.stem
-            if file_name in pathObj[structure_name].keys():
-                raise ValueError(f"Duplicate structure and file {structure}/{file_name}.pdb")
-            pathObj[structure_name][file_name] = file.absolute()
-            structures_count += 1
-    print(f"Found {structures_count} structures")
-    return pathObj
-
-def Run(pathObj, silent=True, num_threads=cpu_count) -> pd.DataFrame|None:
-    tasks = []
-    for structure, fileDict in pathObj.items():
-        for file, path in fileDict.items():
-            tasks.append([path, structure, file])
-
-    tasks = [[silent, *t] for t in tasks]
+    pathObj = [[silent, *p] for p in pathObj]
 
     p = Pool(processes=num_threads)
-    results = p.map(_run_task, tasks)
+    results = p.map(_run_task, pathObj)
     p.close()
 
     results = [x for x in results if x is not None]
     if len(results) == 0:
         return None
-    return pd.DataFrame(results).sort_values(["prediction_name", "structure_file"])
-
-def _run_task(tasks):
-    silent, task = tasks[0], tasks[1:]
-    r = EvaluateStructure(*task)
-    if r is not None and not silent:
-        print(r["prediction_name"], r["structure_file"])
-    return r
-
-
-if __name__ == "__main__":
-
-    structure_basePath = pathlib.Path("ressources/ISS AF_DMI_structures").absolute()
-    outputPath = pathlib.Path(r"2024-12-16/output/structures_measured.csv").absolute()
-    structure_folders = [structure_basePath / p for p in ['AF_DMI_structures1', 'AF_DMI_structures2', 'AF_DMI_structures3']]
-
-    pathObj = {}
-    for folder in structure_folders:
-        pathObj = WalkFolder(folder, pathObj)
-    results = Run(pathObj, silent=False)
-    
-    if results is not None:
-        results.to_csv(outputPath, index=False)
+    return pd.DataFrame(results).sort_values(["structure_name", "file"])
