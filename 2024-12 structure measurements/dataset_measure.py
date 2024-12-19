@@ -1,3 +1,8 @@
+# Libary to measure structures
+# Adapted from IMB Summer School code
+# Edited by Andreas Brilka 2024-12-16
+
+
 from Bio.PDB import ShrakeRupley
 from Bio.PDB.PDBExceptions import PDBConstructionException
 from Bio.PDB import PDBParser
