@@ -64,8 +64,7 @@ def minimum_interface_distance(structure):
         for atom2 in atomsCA_chain2:
             min_distance = min(min_distance, cpv.distance(atom1.coord, atom2.coord))
 
-    # If no distances were found, return 0, otherwise return the minimum distance
-    return min_distance if min_distance != float('inf') else 0
+    return min_distance if min_distance != float('inf') else float('NaN')
 
 
 # Function to calculate hydrogen bonds
