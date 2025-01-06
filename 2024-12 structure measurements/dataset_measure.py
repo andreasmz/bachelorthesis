@@ -22,6 +22,7 @@ cpu_count = multiprocessing.cpu_count()
 
 # Function to calculate buried area using Shrake-Rupley
 def calculate_buried_area(structure):
+    #2025-01-06: Rewritten to use Biotite
     chains = [c for c in structure.get_chains()]
     assert len(chains) == 2
 
@@ -42,6 +43,7 @@ def calculate_buried_area(structure):
 
     # Calculate buried area
     buried_area = (area_ch1 + area_ch2 - total_area)
+    print("OldSASA", total_area, area_ch1, area_ch2)
     return round(buried_area, 3)
  
 # Function to calculate the minimum distance of interface residues
