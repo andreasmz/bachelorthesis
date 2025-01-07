@@ -191,7 +191,7 @@ def calculate_min_distance(atomarray_biotite:struc.AtomArray, cutoff:float=5.0, 
     tf = time.perf_counter()
     logger.debug(f"Runtime calculate_min_distance: {round((tf-ti)*1000, 1)}ms ({round((t1-ti)*1000, 1)}ms generating chains, {round((tf-t1)*1000, 1)}ms calculating distance)")
     
-    return round(min_distance, 3) if math.isfinite(min_distance) else float('NaN')
+    return round(float(min_distance), 3) if math.isfinite(min_distance) else float('NaN')
 
 def calculate_hbonds(atomarray_biotite:struc.AtomArray):
     """
