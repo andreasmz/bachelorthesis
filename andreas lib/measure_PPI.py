@@ -1,6 +1,7 @@
 # created by Andreas Brilka from a code basis from IMB summmer school
 # 2024-12-16
 
+import datetime
 import math
 import numpy as np
 import pathlib
@@ -12,12 +13,14 @@ import logging
 
 cpu_count = cpu_count()
 logger = logging.getLogger("measure_PPI") # For general logging
+LOGLEVEL_ADDITIONAL_INFO = 19
 if len(logger.handlers) == 0:
     formatter = logging.Formatter(fmt="[%(asctime)s | %(module)s | %(levelname)s] %(message)s")
     streamHandler = logging.StreamHandler(sys.stdout)
     streamHandler.setFormatter(formatter)
     logger.setLevel(logging.INFO)
     logger.addHandler(streamHandler)
+    logging.addLevelName(LOGLEVEL_ADDITIONAL_INFO, "LOWINFO")
 if __name__ == "__main__":
     logger.info("Loaded measure_PPI libary")
 
@@ -25,7 +28,15 @@ import biotite.structure as struc
 import biotite.structure.io.pdb as bt_pdb
 from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure as BioPy_PDBStructure
+from Bio.PDB.Model import Model as BioPy_PDBModel
 from Bio.PDB.PDBExceptions import PDBConstructionException
+
+_freesasa_ready = False
+try:
+    import freesasa
+    _freesasa_ready = True
+except ModuleNotFoundError:
+    logger.warning("You don't have freesasa installed. Falling back to biotite")
 
 parser = PDBParser(QUIET=True)
 
@@ -60,8 +71,45 @@ def OpenStructure(path: pathlib.Path, structure_name: str = "") -> tuple[BioPy_P
     logger.debug(f"Runtime reading structure {structure_name} (file {file_name}): {round((t1-t0)*1000, 1)}ms")
     return (structure_biopy, atomarray_biotite)
 
+def calculate_buried_area(structure_biopy:BioPy_PDBStructure):
+    """
+        Calculates the buried surface area using freesasa which is defined as surface area of the two chains
+        subtracted from the surface area of the complex.
+    """
+    ti = time.perf_counter()
+    chains = [c for c in structure_biopy.get_chains()]
+    assert len(chains) == 2
 
-def calculate_buried_area(atomarray_biotite:struc.AtomArray, probe_radius:float=1.4):
+    chain1 = structure_biopy[0][chains[0].id]
+    chain2 = structure_biopy[0][chains[1].id]
+
+    strucChain1 = BioPy_PDBStructure('structure')
+    modelChain1 = BioPy_PDBModel("1")
+    modelChain1.add(chain1)
+    strucChain1.add(modelChain1)
+    strucChain2 = BioPy_PDBStructure('structure')
+    modelChain2 = BioPy_PDBModel("1")
+    modelChain2.add(chain2)
+    strucChain2.add(modelChain2)
+    t1 = time.perf_counter()
+
+    fs_pp = freesasa.structureFromBioPDB(structure_biopy)
+    fs_chain1 = freesasa.structureFromBioPDB(strucChain1)
+    fs_chain2 = freesasa.structureFromBioPDB(strucChain2)
+    t2 = time.perf_counter()
+
+    area_pp = freesasa.calc(fs_pp).totalArea()
+    area_chain1 = freesasa.calc(fs_chain1).totalArea()
+    area_chain2 = freesasa.calc(fs_chain2).totalArea()
+    tf = time.perf_counter()
+
+    buried_area = (area_chain1 + area_chain2 - area_pp)
+    tf = time.perf_counter()
+    logger.debug(f"Sasa values: Chain 1 = {round(area_chain1, 3)}, Chain 2 = {round(area_chain2, 3)}, Total = {round(area_pp, 3)}")
+    logger.debug(f"Runtime calculate_buried_area: {round((tf-ti)*1000, 1)}ms ({round((t1-ti)*1000, 1)}ms model buiilding, {round((t2-t1)*1000, 1)}ms loading, {round((tf-t2)*1000, 1)}ms sasa calc)")
+    return round(buried_area, 3)
+
+def calculate_buried_area_biotite(atomarray_biotite:struc.AtomArray, probe_radius:float=1.4):
     """
         Calculates the buried surface area using biotite which is defined as surface area of the two chains
         subtracted from the surface area of the complex.
@@ -74,9 +122,20 @@ def calculate_buried_area(atomarray_biotite:struc.AtomArray, probe_radius:float=
     chain2 = atomarray_biotite[atomarray_biotite.chain_id == chains[1]]
     t1 = time.perf_counter()
 
-    sasa12 = np.sum([s for s in struc.sasa(atomarray_biotite, probe_radius=probe_radius) if math.isfinite(s)])
-    sasa1 = np.sum([s for s in struc.sasa(chain1, probe_radius=probe_radius) if math.isfinite(s)])
-    sasa2 = np.sum([s for s in struc.sasa(chain2, probe_radius=probe_radius) if math.isfinite(s)])
+    if _freesasa_ready:
+        strucChain1 = BioPy_PDBStructure('structure')
+        modelChain1 = BioPy_PDBModel("1")
+        modelChain1.add(chain1)
+        strucChain1.add(modelChain1)
+        strucChain2 = BioPy_PDBStructure('structure')
+        modelChain2 = BioPy_PDBModel("1")
+        modelChain2.add(chain2)
+        strucChain2.add(modelChain2)
+        
+    else:
+        sasa12 = np.sum([s for s in struc.sasa(atomarray_biotite, probe_radius=probe_radius) if math.isfinite(s)])
+        sasa1 = np.sum([s for s in struc.sasa(chain1, probe_radius=probe_radius) if math.isfinite(s)])
+        sasa2 = np.sum([s for s in struc.sasa(chain2, probe_radius=probe_radius) if math.isfinite(s)])
     logger.debug(f"Sasa values: Chain 1 = {round(sasa1, 3)}, Chain 2 = {round(sasa2, 3)}, Total = {round(sasa12, 3)}")
     buried_area = (sasa1 + sasa2 - sasa12)
     tf = time.perf_counter()
@@ -84,10 +143,17 @@ def calculate_buried_area(atomarray_biotite:struc.AtomArray, probe_radius:float=
     return round(buried_area, 3)
 
 
-def calculate_min_distance(atomarray_biotite:struc.AtomArray):
+def calculate_min_distance(atomarray_biotite:struc.AtomArray, cutoff:float=5.0, max_cutoff:float = 10.0):
     """
-        Calculates the minimum distance between the two chains of a protein complex using biotite.
-        The minimum distance is defined as the distance between the backbone (CA atoms)
+        Calculates the minimum distance [Angstrom] between the two chains of a protein complex using biotite.
+        The minimum distance is defined as the distance between the backbone (CA atoms) if is subceeds
+        the cutoff value. For distances above cutoff the algorithm reports NaN
+
+        You may whish to apply the cutoff value not for the backbone only but for all atoms of the residue.
+        For this, set the max_cutoff [Angstrom] to something above cutoff (for example twice) and this function
+        will report distances above cutoff if a) at least one pair of atoms in the two residues has a distance
+        below cutoff and b) the backbone distance is still below max_cutoff.
+        This will require MUCH more computational power and should therefore only be enabled if necessary.
     """
     ti = time.perf_counter()
     chains = struc.get_chains(atomarray_biotite)
@@ -95,14 +161,33 @@ def calculate_min_distance(atomarray_biotite:struc.AtomArray):
 
     chain1 = atomarray_biotite[atomarray_biotite.chain_id == chains[0]]
     chain2 = atomarray_biotite[atomarray_biotite.chain_id == chains[1]]
-    t1 = time.perf_counter()
 
     chain1_backbone = chain1[chain1.atom_name == "CA"]
     chain2_backbone = chain2[chain2.atom_name == "CA"]
+    
     min_distance = float("inf")
-    for a1 in chain1_backbone:
-        for a2 in chain2_backbone:
-            min_distance = min(min_distance, struc.distance(a1, a2))
+    t1 = time.perf_counter()
+
+    # max_cutoff is implemented to mimic the same behaviour as the ISS code which used pymol.
+
+    for ca1 in chain1_backbone:
+        for ca2 in chain2_backbone:
+            if (dist := struc.distance(ca1, ca2)) < cutoff:
+                min_distance = min(min_distance, dist)
+                continue
+            elif dist <= max_cutoff and dist < min_distance: # If max_cutoff is set, check the individual atoms
+                for a1 in chain1[chain1.res_id == ca1.res_id]:
+                    for a2 in chain2[chain2.res_id == ca2.res_id]:
+                        if struc.distance(a1, a2) <= cutoff:
+                            break
+                    else: # Runs after loop finished normally
+                        continue
+                    break # This only runs if there is a break in the inner loop because of previous continue statement
+                else:
+                    # Only calculate min_distance if there is the atom wise distance of the residues is below cutoff
+                    continue
+                min_distance = min(min_distance, dist)
+
     tf = time.perf_counter()
     logger.debug(f"Runtime calculate_min_distance: {round((tf-ti)*1000, 1)}ms ({round((t1-ti)*1000, 1)}ms generating chains, {round((tf-t1)*1000, 1)}ms calculating distance)")
     
@@ -211,14 +296,14 @@ def EvaluateStructure(path: pathlib.Path, structure_name: str = "") -> dict|None
     structure_biopy, atomarray_biotite = OpenStructure(path, structure_name)
     if structure_biopy is None or atomarray_biotite is None: return None
 
-    buried_area = calculate_buried_area(atomarray_biotite)
+    buried_area = calculate_buried_area(structure_biopy) if _freesasa_ready else calculate_buried_area_biotite(atomarray_biotite)
     hbonds = calculate_hbonds(atomarray_biotite)
     min_distance = calculate_min_distance(atomarray_biotite)
     salt_bridges = calculate_saltbridges(structure_biopy)
     hydrophobic_interactions = calculate_hydrophobic_interactions(structure_biopy)
 
     tf = time.perf_counter()
-    logger.info(f"parsed {structure_name} (file {file_name}) in {round((tf-ti), 3)}s")
+    logger.log(level=LOGLEVEL_ADDITIONAL_INFO, msg=f"parsed {structure_name} (file {file_name}) in {round((tf-ti), 3)}s")
     return {
         'structure_name': structure_name,
         'file': file_name,
@@ -240,23 +325,31 @@ def Run(pathObj: list[tuple[pathlib.Path, str]], num_threads=cpu_count) -> pd.Da
         pathObj is a list of tuples of (path_to_pdf: pathlib.Path, structure_name: str)
         [The structurename is used for the output as filenames often are not unique]
     """
+    if len(pathObj) == 0:
+        logger.warning(f"You provided an empty pathObj")
+        return
     logger.info(f"Started Taskpool of {num_threads} processes for {len(pathObj)} files")
     p = Pool(processes=num_threads)
     results = []
-    _t = time.perf_counter()
+    t0 = time.perf_counter()
+    _ti = t0
+    _ti_n = 0
     for i, r in enumerate(p.imap(_run_task, pathObj)):
-        if i % 25 == 0:
-            _speed = ((time.perf_counter() - _t)/25)**-1
-            logger.info(f"parsed {int(100*i/len(pathObj))}% with a speed of {round(_speed, 3)} s⁻¹")
-            _t = time.perf_counter()
+        _ti_n += 1
+        if time.perf_counter() - _ti > 5:
+            _speed = ((time.perf_counter() - _ti)/_ti_n)**-1 if _ti_n > 0 else 0
+            _speed_avg = ((time.perf_counter() - t0)/i)**-1 if i > 0 else 0
+            _eta = (len(pathObj) - i)/_speed_avg
+            _ti = time.perf_counter()
+            _ti_n = 0
+            logger.info(f"{int(100*i/len(pathObj))}% - ETA {str(datetime.timedelta(seconds=int(_eta)))} | current speed {round(_speed, 3)} s⁻¹ | average speed {round(_speed_avg, 3)} s⁻¹")
         if r is not None:
             results.append(r)
-    #results = p.map(_run_task, pathObj)
-    p.close()
 
-    results = [x for x in results if x is not None]
+    p.close()
     if len(results) == 0:
         return None
+    logger.info(f"Finished processing {len(pathObj)} objects in {str(datetime.timedelta(seconds=int(time.perf_counter() - t0)))}")
     return pd.DataFrame(results).sort_values(["structure_name", "file"])
 
 def WalkFolder(basePath: str, 
