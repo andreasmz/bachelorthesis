@@ -413,9 +413,3 @@ def WalkFolder(basePath: str,
             structures_count += 1
     print(f"Found {structures_count} structures")
     return pathObj
-
-if __name__ == "__main__":
-    structure_basePath = (pathlib.Path(__file__) / ".." / ".." / "ressources" / "ISS AF_DMI_structures").resolve()
-    structure_folders = [structure_basePath / p for p in ['AF_DMI_structures1', 'AF_DMI_structures2', 'AF_DMI_structures3']]
-    pathObj = WalkFolder(structure_folders[1])
-    Run(list(pathObj.values()))
