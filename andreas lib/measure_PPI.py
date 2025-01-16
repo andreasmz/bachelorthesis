@@ -109,41 +109,25 @@ def calculate_buried_area(structure_biopy:BioPy_PDBStructure):
     logger.debug(f"Runtime calculate_buried_area: {round((tf-ti)*1000, 1)}ms ({round((t1-ti)*1000, 1)}ms model buiilding, {round((t2-t1)*1000, 1)}ms loading, {round((tf-t2)*1000, 1)}ms sasa calc)")
     return round(buried_area, 3)
 
-def calculate_buried_area_biotite(atomarray_biotite:struc.AtomArray, probe_radius:float=1.4):
+def calculate_buried_area_biotite(atomarray_biotite:struc.AtomArray, chain1:struc.AtomArray, chain2:struc.AtomArray, probe_radius:float=1.4):
     """
         Calculates the buried surface area using biotite which is defined as surface area of the two chains
         subtracted from the surface area of the complex.
     """
     ti = time.perf_counter()
-    chains = struc.get_chains(atomarray_biotite)
-    assert len(chains) == 2
 
-    chain1 = atomarray_biotite[atomarray_biotite.chain_id == chains[0]]
-    chain2 = atomarray_biotite[atomarray_biotite.chain_id == chains[1]]
-    t1 = time.perf_counter()
+    sasa12 = np.sum([s for s in struc.sasa(atomarray_biotite, probe_radius=probe_radius) if math.isfinite(s)])
+    sasa1 = np.sum([s for s in struc.sasa(chain1, probe_radius=probe_radius) if math.isfinite(s)])
+    sasa2 = np.sum([s for s in struc.sasa(chain2, probe_radius=probe_radius) if math.isfinite(s)])
 
-    if _freesasa_ready:
-        strucChain1 = BioPy_PDBStructure('structure')
-        modelChain1 = BioPy_PDBModel("1")
-        modelChain1.add(chain1)
-        strucChain1.add(modelChain1)
-        strucChain2 = BioPy_PDBStructure('structure')
-        modelChain2 = BioPy_PDBModel("1")
-        modelChain2.add(chain2)
-        strucChain2.add(modelChain2)
-        
-    else:
-        sasa12 = np.sum([s for s in struc.sasa(atomarray_biotite, probe_radius=probe_radius) if math.isfinite(s)])
-        sasa1 = np.sum([s for s in struc.sasa(chain1, probe_radius=probe_radius) if math.isfinite(s)])
-        sasa2 = np.sum([s for s in struc.sasa(chain2, probe_radius=probe_radius) if math.isfinite(s)])
     logger.debug(f"Sasa values: Chain 1 = {round(sasa1, 3)}, Chain 2 = {round(sasa2, 3)}, Total = {round(sasa12, 3)}")
     buried_area = (sasa1 + sasa2 - sasa12)
     tf = time.perf_counter()
-    logger.debug(f"Runtime calculate_buried_area: {round((tf-ti)*1000, 1)}ms ({round((t1-ti)*1000, 1)}ms generating chains, {round((tf-t1)*1000, 1)}ms sasa)")
+    logger.debug(f"Runtime calculate_buried_area: {round((tf-ti)*1000, 1)}ms ")
     return round(buried_area, 3)
 
 
-def calculate_min_distance(atomarray_biotite:struc.AtomArray, cutoff:float=5.0, max_cutoff:float = 10.0):
+def calculate_min_distance(atomarray_biotite:struc.AtomArray, cutoff:float=5.0, max_cutoff:float = 15.0):
     """
         Calculates the minimum distance [Angstrom] between the two chains of a protein complex using biotite.
         The minimum distance is defined as the distance between the backbone (CA atoms) if is subceeds
