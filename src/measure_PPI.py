@@ -1,6 +1,8 @@
 # created by Andreas Brilka from a code basis from IMB summmer school
 # 2024-12-16
 
+__version__ = "1.0.3"
+
 import datetime
 import math
 import numpy as np
@@ -8,21 +10,11 @@ import pathlib
 import pandas as pd
 import sys
 import time
-from multiprocessing import Pool, cpu_count
 import logging
-
-cpu_count = cpu_count()
-logger = logging.getLogger("measure_PPI") # For general logging
-LOGLEVEL_ADDITIONAL_INFO = 19
-if len(logger.handlers) == 0:
-    formatter = logging.Formatter(fmt="[%(asctime)s | %(module)s | %(levelname)s] %(message)s")
-    streamHandler = logging.StreamHandler(sys.stdout)
-    streamHandler.setFormatter(formatter)
-    logger.setLevel(logging.INFO)
-    logger.addHandler(streamHandler)
-    logging.addLevelName(LOGLEVEL_ADDITIONAL_INFO, "LOWINFO")
-if __name__ == "__main__":
-    logger.info("Loaded measure_PPI libary")
+from io import StringIO
+from multiprocessing import Pool, cpu_count, get_logger
+import multiprocessing_logging
+multiprocessing_logging.install_mp_handler()
 
 import biotite.structure as struc
 import biotite.structure.io.pdb as bt_pdb
@@ -30,6 +22,16 @@ from Bio.PDB import PDBParser
 from Bio.PDB.Structure import Structure as BioPy_PDBStructure
 from Bio.PDB.Model import Model as BioPy_PDBModel
 from Bio.PDB.PDBExceptions import PDBConstructionException
+
+LOGLEVEL_ADDITIONAL_INFO = 19 # The module logs more information like for example the current processed file with this level
+
+logger = logging.getLogger("measure_PPI")
+formatter = logging.Formatter(fmt="[%(asctime)s | %(module)s | %(levelname)s] %(message)s")
+streamHandler = logging.StreamHandler(sys.stdout)
+streamHandler.setFormatter(formatter)
+logger.setLevel(logging.INFO)
+logger.addHandler(streamHandler)
+logging.addLevelName(LOGLEVEL_ADDITIONAL_INFO, "INFO")
 
 _freesasa_ready = False
 try:
@@ -39,6 +41,22 @@ except ModuleNotFoundError:
     logger.warning("You don't have freesasa installed. Falling back to biotite")
 
 parser = PDBParser(QUIET=True)
+
+# This function is included to allow worker threads to output to Jupyter Notebooks as multiprocessing.Pool does not allow to alter sys.stdout of the child processes.
+# Therefore this function redirects the log output to a buffer, which is transmitted back to the main thread where it is outputed.
+def _WorkerThreadIni(logLevel:int):
+    """
+        This function is called in the worker threads by multiprocessing.Pool
+    """
+    global stdout, logger
+    stdout = StringIO()
+    sys.stdout = stdout
+    streamHandler.setStream(sys.stdout)
+    logger.setLevel(logLevel)
+
+class ProteinStructureWarning(Exception):
+    def __init__(self, message):            
+        super().__init__(message)
 
 def OpenStructure(path: pathlib.Path, structure_name: str = "") -> tuple[BioPy_PDBStructure|None, struc.AtomArray|None]:
     """
@@ -278,7 +296,7 @@ def EvaluateStructure(path: pathlib.Path, structure_name: str = "") -> dict|None
     ti = time.perf_counter()
     file_name = path.name
     structure_biopy, atomarray_biotite = OpenStructure(path, structure_name)
-    if structure_biopy is None or atomarray_biotite is None: return None
+    if structure_biopy is None or atomarray_biotite is None: raise ProteinStructureWarning(f"The strucuture {structure_name} (file {path.name}) can't be opened")
 
     buried_area = calculate_buried_area(structure_biopy) if _freesasa_ready else calculate_buried_area_biotite(atomarray_biotite)
     hbonds = calculate_hbonds(atomarray_biotite)
@@ -298,44 +316,6 @@ def EvaluateStructure(path: pathlib.Path, structure_name: str = "") -> dict|None
         'hydrophobic_interactions': hydrophobic_interactions
     }
 
-
-def _run_task(task):
-        r = EvaluateStructure(*task)
-        return r
-
-def Run(pathObj: list[tuple[pathlib.Path, str]], num_threads=cpu_count) -> pd.DataFrame|None:
-    """
-        Measures the given paths and returns the result as pandas Dataframe.
-        pathObj is a list of tuples of (path_to_pdf: pathlib.Path, structure_name: str)
-        [The structurename is used for the output as filenames often are not unique]
-    """
-    if len(pathObj) == 0:
-        logger.warning(f"You provided an empty pathObj")
-        return
-    logger.info(f"Started Taskpool of {num_threads} processes for {len(pathObj)} files")
-    p = Pool(processes=num_threads)
-    results = []
-    t0 = time.perf_counter()
-    _ti = t0
-    _ti_n = 0
-    for i, r in enumerate(p.imap(_run_task, pathObj)):
-        _ti_n += 1
-        if time.perf_counter() - _ti > 5:
-            _speed = ((time.perf_counter() - _ti)/_ti_n)**-1 if _ti_n > 0 else 0
-            _speed_avg = ((time.perf_counter() - t0)/i)**-1 if i > 0 else 0
-            _eta = (len(pathObj) - i)/_speed_avg
-            _ti = time.perf_counter()
-            _ti_n = 0
-            logger.info(f"{int(100*i/len(pathObj))}% - ETA {str(datetime.timedelta(seconds=int(_eta)))} | current speed {round(_speed, 3)} s⁻¹ | average speed {round(_speed_avg, 3)} s⁻¹")
-        if r is not None:
-            results.append(r)
-
-    p.close()
-    if len(results) == 0:
-        return None
-    logger.info(f"Finished processing {len(pathObj)} objects in {str(datetime.timedelta(seconds=int(time.perf_counter() - t0)))}")
-    return pd.DataFrame(results).sort_values(["structure_name", "file"])
-
 def WalkFolder(basePath: str, 
                pathObj:dict[str, dict[str, pathlib.Path]]={},
                structures: None|str|list[str] = None,
@@ -347,7 +327,6 @@ def WalkFolder(basePath: str,
         Returns:
             pathObj: dict[name:str, tuple[path: pathlib.Path, structure_name: str]]
     """
-
     structures_count = 0
     basePath = pathlib.Path(basePath).absolute()
     if not basePath.is_dir():
@@ -395,5 +374,59 @@ def WalkFolder(basePath: str,
                 raise ValueError(f"Duplicate structure and file {structure}/{file_name}.pdb")
             pathObj[name] = (file.absolute(), structure_name)
             structures_count += 1
-    print(f"Found {structures_count} structures")
+    logger.info(f"Found {structures_count} structures")
     return pathObj
+
+
+# This function is called from the main processes with a pathObj
+def _run_task(args) -> tuple[dict|None, str]:
+    """
+        Helper function called from the main process using multiprocessing.Pool and pool.imap_unordered.
+        Returns a tuple. The first value is either or a dict containing the measurement parameters or None on a error, while the second value
+        is the output of the logging function.
+    """
+    path, structure_name = args
+    try:
+        r = EvaluateStructure(path, structure_name)
+    except ProteinStructureWarning as ex:
+        logger.warning(str(ex))
+        r = None
+    output = stdout.getvalue().strip("\n")
+    return (r, output)
+
+def Run(pathObj: list[tuple[pathlib.Path, str]], num_threads=None) -> pd.DataFrame|None:
+    """
+        Measures the given paths and returns the result as pandas Dataframe.
+        pathObj is a list of tuples of (path_to_pdf: pathlib.Path, structure_name: str)
+        [The structurename is used for the output as filenames often are not unique]
+    """
+
+    if len(pathObj) == 0:
+        logger.warning(f"You provided an empty pathObj")
+        return
+    logger.info(f"Started Taskpool of {num_threads} processes for {len(pathObj)} files")
+    t0 = time.perf_counter()
+    with Pool(initializer=_WorkerThreadIni, initargs=[logger.level], processes=(num_threads if num_threads is not None else cpu_count())) as p:
+        results = []
+        _ti = t0
+        _ti_n = 0
+        for i, rmsg in enumerate(p.imap_unordered(_run_task, pathObj)):
+            r, output = rmsg
+            if len(output) > 0:
+                print(output)
+            _ti_n += 1
+            if time.perf_counter() - _ti > 5:
+                _speed = ((time.perf_counter() - _ti)/_ti_n)**-1 if _ti_n > 0 else 0
+                _speed_avg = ((time.perf_counter() - t0)/i)**-1 if i > 0 else 0
+                _eta = (len(pathObj) - i)/_speed_avg if _speed_avg != 0 else -1
+                _ti = time.perf_counter()
+                _ti_n = 0
+                logger.info(f"{int(100*i/len(pathObj))}% - ETA {str(datetime.timedelta(seconds=int(_eta))) if _eta >= 0 else '?'} | current speed {round(_speed, 3)} s⁻¹ | average speed {round(_speed_avg, 3)} s⁻¹")
+            if r is not None:
+                results.append(r)
+    _speed_avg = ((time.perf_counter() - t0)/len(pathObj))**-1
+    num_errors = len(pathObj) - len(results)
+    logger.info(f"Finished processing {len(pathObj)} objects{f' ({num_errors} objects produced an error)' if num_errors > 0 else ''} in {str(datetime.timedelta(seconds=int(time.perf_counter() - t0)))} | average speed {round(_speed_avg, 3)} s⁻¹")
+    if len(results) == 0:
+        return None
+    return pd.DataFrame(results).sort_values(["structure_name", "file"])
