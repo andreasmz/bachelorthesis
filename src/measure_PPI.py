@@ -15,6 +15,7 @@ from io import StringIO
 from multiprocessing import Pool, cpu_count, get_logger
 import multiprocessing_logging
 multiprocessing_logging.install_mp_handler()
+from typing import Self
 
 import biotite.structure as struc
 import biotite.structure.io.pdb as bt_pdb
@@ -32,6 +33,83 @@ streamHandler.setFormatter(formatter)
 logger.setLevel(logging.INFO)
 logger.addHandler(streamHandler)
 logging.addLevelName(LOGLEVEL_ADDITIONAL_INFO, "INFO")
+
+class Stopwatch:
+    """
+        A helper class to measure performance. Supports laps and nested stopwatches and is able to return average runtimes for all the stopwatches supplied.
+    """
+
+    def __init__(self):
+        self._times = {}
+        self.times = None
+        self._stopwatches = {}
+    def Start(self) -> Self:
+        """
+            Starts the stopwatch
+        """
+        self._times["initial"] = time.perf_counter()
+        return self
+
+    def Lap(self, name:str, stopwatch:Self=None) -> Self:
+        """
+            Create a lap for the current stopwatch = time since last lap call.
+            If a stopwatch is provided, it will be parsed as a subentry when calling Stopwatch.Evaluate()
+        """
+        if "initial" not in self._times.keys(): raise RuntimeError("Please first initialize the Stopwatch by Starting it")
+        if name == "final" or name=="initial": raise ValueError(f"'{name}' is an invalid name")
+        if name in self._times.keys(): raise ValueError("Duplicate key entry for lap name")
+
+        self._times[name] = time.perf_counter()
+
+        if stopwatch is not None:
+            self._stopwatches[name] = stopwatch
+        return self
+
+    def Stop(self) -> Self:
+        """
+            Stops the stopwatch
+        """
+        if "initial" not in self._times.keys():
+            raise RuntimeError("Please first initialize the Stopwatch by Starting it")
+        self._times["final"] = time.perf_counter()
+        self.times = {}
+        for i in range(1, len(self._times)):
+            ks = list(self._times.keys())
+            t_n1 = self._times[ks[i-1]]
+            t_n = self._times[ks[i]]
+            name_n = ks[i]
+            if name_n == "final": continue
+            self.times[name_n] = t_n - t_n1
+        self.times["total runtime"] = self._times["final"] - self._times["initial"]
+        return self
+
+    def Evaluate(stopwatches: list[Self]):
+        """
+            Evaluate the list of stopwatches provided and return a dict of average runtimes.
+
+            Example output (all times in rounded milliseconds)
+
+            {
+                'Step 1': (n=13, mean=23.55, var=2.34),
+                'Step 2': {
+                    'Substep 1': (n=7, mean=0.33, var=0.0),
+                    'Substep 2': (n=7, mean=10.9, var=9.3),
+                    'Total': (n=7, mean=11.3, var=7.4)
+                }
+                'Total': (n=13, mean=34.34, var=5.22)
+            }
+        """
+        runtimes: dict[str,list[float]] = {}
+        for s in stopwatches:
+            for k, v in s.times.items():
+                runtimes.get(k, [])
+                if k in s._stopwatches.keys():
+                    runtimes[k].append(v)
+                    runtimes[k] = Stopwatch.Evaluate(s._stopwatches)
+                else:
+                    runtimes[k].append(v)
+        runtime_stats = {k:(len(v), np.mean(v), np.var(v)) for k,v in runtimes.items() if type(v) == tuple}
+        return runtime_stats
 
 _freesasa_ready = False
 try:
