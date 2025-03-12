@@ -1,0 +1,4 @@
+{
+    "model_preset": {"desc": "for all columns set to alphafold3"},
+    "chainA_start": {"type": "", desc": ""}
+}
