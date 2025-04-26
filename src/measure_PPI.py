@@ -297,6 +297,36 @@ def calculate_hbonds(atomarray_biotite:struc.AtomArray):
     return triplets.shape[0]
 
 
+def calculate_disulfide_bonds(structure_biopy:BioPy_PDBStructure, cutoff:float=2.1):
+    """
+        Calculates the number of disulfide bonds between the two chains of a protein complex using biopython.
+        For this, sulfer atoms in cysteins with a distance less than 2.1 Angstrom are searched
+    """
+    ti = time.perf_counter()
+    chains = [c for c in structure_biopy.get_chains()]
+    assert len(chains) == 2
+
+    chain1 = structure_biopy[0][chains[0].id]
+    chain2 = structure_biopy[0][chains[1].id]
+
+    disulfide_bonds = 0
+    for res1 in [r for r in chain1 if r.resname == "CYS"]:
+        for res2 in [r for r in chain2 if r.resname == "CYS"]:
+            for atom1 in [a for a in res1 if a.id == "SG"]:
+                for atom2 in [a for a in res2 if a.id == "SG"]:
+                    distance = atom1 - atom2
+                    if distance <= cutoff:
+                        disulfide_bonds += 1
+                        break # Only one disulfide bond per pair
+                else: # This three lines pass the break from the inner to the outer loop
+                    continue
+                break
+    tf = time.perf_counter()
+    logger.debug(f"Runtime calculate_saltbridges: {round((tf-ti)*1000, 1)}ms")
+    
+    return disulfide_bonds
+
+
 def calculate_saltbridges(structure_biopy:BioPy_PDBStructure, cutoff:float=4.0):
     """
         Calculates the number of saltbridges between the two chains of a protein complex using biopython.
@@ -310,8 +340,13 @@ def calculate_saltbridges(structure_biopy:BioPy_PDBStructure, cutoff:float=4.0):
     chain1 = structure_biopy[0][chains[0].id]
     chain2 = structure_biopy[0][chains[1].id]
 
-    saltBridges_ac = {"ASP":"a", "GLU":"a", "ARG":"b", "LYS":"b"} # a: Acidic, b: Basic
-    saltBridges_atoms = ['OD1', 'OD2', 'OE1', 'OE2', 'NH1', 'NH2', 'NE', 'NZ'] # 0,1: ASP, 2,3: GLU, 4,5,6: ARG, 7: LYS
+    saltBridges_ac = {"ASP":"a", "GLU":"a", "ARG":"b", "LYS":"b", "HIS": "b"} # a: Acidic, b: Basic
+    saltBridges_atoms = ['OD1', 'OD2', # Aspartate
+                        'OE1', 'OE2', # Glutamate
+                        'NH1', 'NH2', 'NE', # Arginin 
+                        'NZ', # Lysin
+                        'ND1', 'NE1', 'AE1', 'AE2' # Histidin
+                        ]
 
     salt_bridges = 0
 
@@ -328,6 +363,10 @@ def calculate_saltbridges(structure_biopy:BioPy_PDBStructure, cutoff:float=4.0):
                     distance = atom1 - atom2
                     if distance <= cutoff:
                         salt_bridges += 1
+                        break # Only one salt bridge per pair
+                else: # This three lines pass the break from the inner to the outer loop
+                    continue
+                break
     tf = time.perf_counter()
     logger.debug(f"Runtime calculate_saltbridges: {round((tf-ti)*1000, 1)}ms")
     
@@ -382,6 +421,7 @@ def EvaluateStructure(path: pathlib.Path, structure_name: str = "") -> dict|None
     min_distance = calculate_min_distance(atomarray_biotite)
     salt_bridges = calculate_saltbridges(structure_biopy)
     hydrophobic_interactions = calculate_hydrophobic_interactions(structure_biopy)
+    disulfide_bonds = calculate_disulfide_bonds(structure_biopy)
 
     tf = time.perf_counter()
     logger.log(level=LOGLEVEL_ADDITIONAL_INFO, msg=f"parsed {structure_name} (file {file_name}) in {round((tf-ti), 3)}s")
@@ -392,7 +432,8 @@ def EvaluateStructure(path: pathlib.Path, structure_name: str = "") -> dict|None
         'salt_bridges': salt_bridges,
         'buried_area': buried_area,
         'min_distance': min_distance,
-        'hydrophobic_interactions': hydrophobic_interactions
+        'hydrophobic_interactions': hydrophobic_interactions,
+        "disulfide_bonds": disulfide_bonds,
     }
 
 def WalkFolder(basePath: str, 
