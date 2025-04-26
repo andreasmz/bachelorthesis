@@ -236,7 +236,7 @@ def calculate_min_distance(atomarray_biotite:struc.AtomArray, cutoff:float=5.0, 
         This will require MUCH more computational power and should therefore only be enabled if necessary.
     """
     ti = time.perf_counter()
-    chains = struc.get_chains(atomarray_biotite)
+    chains = list(set(struc.get_chains(atomarray_biotite)))
     assert len(chains) == 2
 
     chain1 = atomarray_biotite[atomarray_biotite.chain_id == chains[0]]
@@ -278,9 +278,9 @@ def calculate_hbonds(atomarray_biotite:struc.AtomArray):
         Calculates the number of hbonds between two chains of a protein complex using biotites AtomArray
     """
     ti = time.perf_counter()
-    chains = struc.get_chains(atomarray_biotite)
+    chains = list(set(struc.get_chains(atomarray_biotite)))
     assert len(chains) == 2
-
+    
     chain1_mask = atomarray_biotite.chain_id == chains[0]
     chain2_mask = atomarray_biotite.chain_id == chains[1]
     t1 = time.perf_counter()
@@ -375,6 +375,7 @@ def EvaluateStructure(path: pathlib.Path, structure_name: str = "") -> dict|None
     file_name = path.name
     structure_biopy, atomarray_biotite = OpenStructure(path, structure_name)
     if structure_biopy is None or atomarray_biotite is None: raise ProteinStructureWarning(f"The strucuture {structure_name} (file {path.name}) can't be opened")
+    if len([c for c in structure_biopy.get_chains()]) != 2: raise ProteinStructureWarning(f"The strucuture {structure_name} (file {path.name}) has invalid chain length")
 
     buried_area = calculate_buried_area(structure_biopy) if _freesasa_ready else calculate_buried_area_biotite(atomarray_biotite)
     hbonds = calculate_hbonds(atomarray_biotite)
