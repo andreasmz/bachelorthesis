@@ -1,0 +1,13 @@
+Column name	Dtype	For which structures	Description
+set	str	all	DMI or DDI
+PDB_id	str	all	PDB ID of the structure
+DDI_pfam_id	str	DDI	For DDI the Pfam ID. It is important to select the solved structure also by this column as some PDB IDs are refering to multiple structures
+path	str	all	Relative path to the structure
+chainA_id	str	all	Chain ID in the experimentally solved stucture, that corosponds to chain A in the AlphaFold prediction
+chainB_id	str	all	Chain ID in the experimentally solved stucture, that corosponds to chain B in the AlphaFold prediction
+min_distance	float	nearly all	Interface metrics: Interface buried area in Angstrom^2
+buried_area	float	nearly all	Interface metrics: Minimum distance between the residues in the interface in Angstrom
+disulfide_bonds	float	nearly all	Interface metrics: Count of disulfide bonds
+salt_bridges	Int64Dtype	nearly all	Interface metrics: Count of salt bridges
+hbonds	Int64Dtype	nearly all	Interface metrics: Count of hydrogen bonds
+hydrophobic_itneractions	Int64Dtype	nearly all	Interface metrics: Count of hydrophobic interactions
