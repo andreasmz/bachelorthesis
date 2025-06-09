@@ -7,7 +7,7 @@ AF2 only;run_id;str;all;Indicates from which run the structure originates
 ;model_id;str;all;AlphaFold model (i.e. ranked_0, …, ranked_4)
 ;chainA_length;Int64Dtype;all;Length of chain A (DMI: domain, DDI: arbitrary)
 ;chainB_length;Int64Dtype;all;Length of chain B (DMI: motif, DDI: arbitrary)
-;chainA_id;str;nearly all;"Chain ID in the experimentally solved structure corrosponding to chain A in the AlphaFold prediction; Is always A for DMI. For DDI, the known_DDI prediction names contain the chain ID. Thats the reason why for some random_DDI without a known_DDI counterpart no chain ID is listed"
+;chainA_id;str;nearly all;Chain ID in the experimentally solved structure corrosponding to chain A in the AlphaFold prediction. Is always A for DMI. For DDI, the known_DDI prediction names contain the chain ID. Thats the reason why for some random_DDI without a known_DDI counterpart no chain ID is listed
 ;chainB_id;str;nearly all;Chain ID in the experimentally solved structure corrosponding to chain A in the AlphaFold prediction
 ;chainA_start;Int64Dtype;nearly all;AlphaFold predictions always start at residue ID 1, but the experimentally solved structures do not. This column contains the residue ID in the experimentally solved structure corosponding to Residue 1 on chain A in the AlphaFold prediction. The information was parsed from by aligning the experimentally solved structure with the AlphaFold prediction and does therefore not exist for all columns
 ;chainA_end;Int64Dtype;nearly all;See chainA_start
