@@ -18,7 +18,7 @@ Here all plots of the bachelor thesis as well as the notebooks used to generate 
 
 ### /dev
 
-This dev folder should be understand as a kind of lab notebook, as it contains my experiments on the dataset. That is the reason why the notebooks are all named with the date I created them, as they do not contain final code (final code is copied to the appropriate /AlphaFold, /Interface metrics or /Plots folder) but rather try-and-error code to find ways how to deal with the data.
+This dev folder should be understand as a kind of lab notebook, as it contains my experiments on the dataset. That is the reason why the notebooks are all named with the date I created them, as they do not contain final code (final code is copied to the /AlphaFold, /Interface metrics or /Plots folder). The notebooks consists mostly of try-and-error code to find ways how to deal with the data.
 
 ### /external
 
