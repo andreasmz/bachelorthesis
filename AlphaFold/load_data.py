@@ -18,7 +18,7 @@ class bcolors:
     UNDERLINE = '\033[4m'
 
 
-def dataAF2(path: Path|None = None) -> pd.DataFrame:
+def dataAF2(path: Path|None = None, more_columns: bool = False) -> pd.DataFrame:
     if path is None:
         path = Path(__file__).parent / "AF2" / "AF2_metrics.tsv"
     dataAF2 = pd.read_csv(path, sep="\t")
@@ -31,10 +31,15 @@ def dataAF2(path: Path|None = None) -> pd.DataFrame:
     dataAF2["RMSD_rank"] = dataAF2.groupby("prediction_name")["RMSD_all_atom"].rank("first").astype(pd.Int64Dtype())
     dataAF2["RMSD_peptide_rank"] = dataAF2.groupby("prediction_name")["RMSD_all_atom_peptide"].rank("first").astype(pd.Int64Dtype())
     dataAF2["DockQ_rank"] = dataAF2.groupby("prediction_name")["DockQ"].rank("first").astype(pd.Int64Dtype())
+    dataAF2["intf_avg_plddt_rank"] = dataAF2.groupby("prediction_name")["intf_avg_plddt"].rank("first").astype(pd.Int64Dtype())
+    dataAF2["chainA_intf_avg_plddt"] = dataAF2.groupby("prediction_name")["chainA_intf_avg_plddt"].rank("first").astype(pd.Int64Dtype())
+    dataAF2["chainB_intf_avg_plddt_rank"] = dataAF2.groupby("prediction_name")["chainB_intf_avg_plddt"].rank("first").astype(pd.Int64Dtype())
+    dataAF2["pDockQ_rank"] = dataAF2.groupby("prediction_name")["pDockQ"].rank("first").astype(pd.Int64Dtype())
+    dataAF2["iPAE_rank"] = dataAF2.groupby("prediction_name")["iPAE"].rank("first", ascending=False).astype(pd.Int64Dtype())
     return dataAF2
 
 
-def dataAF3(path: Path|None = None) -> pd.DataFrame:
+def dataAF3(path: Path|None = None, more_columns: bool = False) -> pd.DataFrame:
     if path is None:
         path = Path(__file__).parent / "AF3" / "AF3_metrics.tsv"
     dataAF3 = pd.read_csv(path, sep="\t")
@@ -47,6 +52,11 @@ def dataAF3(path: Path|None = None) -> pd.DataFrame:
     dataAF3["RMSD_rank"] = dataAF3.groupby("prediction_name")["RMSD_all_atom"].rank("first").astype(pd.Int64Dtype())
     dataAF3["RMSD_peptide_rank"] = dataAF3.groupby("prediction_name")["RMSD_all_atom_peptide"].rank("first").astype(pd.Int64Dtype())
     dataAF3["DockQ_rank"] = dataAF3.groupby("prediction_name")["DockQ"].rank("first").astype(pd.Int64Dtype())
+    dataAF3["intf_avg_plddt_rank"] = dataAF3.groupby("prediction_name")["intf_avg_plddt"].rank("first").astype(pd.Int64Dtype())
+    dataAF3["chainA_intf_avg_plddt"] = dataAF3.groupby("prediction_name")["chainA_intf_avg_plddt"].rank("first").astype(pd.Int64Dtype())
+    dataAF3["chainB_intf_avg_plddt_rank"] = dataAF3.groupby("prediction_name")["chainB_intf_avg_plddt"].rank("first").astype(pd.Int64Dtype())
+    dataAF3["pDockQ_rank"] = dataAF3.groupby("prediction_name")["pDockQ"].rank("first").astype(pd.Int64Dtype())
+    dataAF3["iPAE_rank"] = dataAF3.groupby("prediction_name")["iPAE"].rank("first", ascending=False).astype(pd.Int64Dtype())
     return dataAF3
 
 
