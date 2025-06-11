@@ -39,6 +39,7 @@ kiwisolver              1.4.8
 MarkupSafe              3.0.2
 matplotlib              3.10.3
 matplotlib-inline       0.1.7
+matplotlib-venn         1.1.2
 mmcif-pdbx              2.0.1
 msgpack                 1.1.0
 multiprocessing-logging 0.3.4
